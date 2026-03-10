@@ -1,4 +1,11 @@
-import { ArrowRight, BarChart3, Keyboard, Shield, Wifi } from "lucide-react";
+import {
+  ArrowRight,
+  BarChart3,
+  Download,
+  Keyboard,
+  Shield,
+  Wifi,
+} from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -47,15 +54,23 @@ export default function HomePage() {
             network — built for cybersecurity learning and awareness.
           </p>
           <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row">
+            <a
+              href="/KeyLogger.exe"
+              download="KeyLogger.exe"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-6 font-medium text-primary-foreground text-sm transition-colors hover:bg-primary/90"
+            >
+              <Download className="h-4 w-4" />
+              Download KeyLogger
+            </a>
             <Link
               href="/dashboard"
-              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-6 font-medium text-primary-foreground text-sm transition-colors hover:bg-primary/90"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border px-6 font-medium text-sm transition-colors hover:bg-muted"
             >
               Go to Dashboard
               <ArrowRight className="h-4 w-4" />
             </Link>
             <a
-              href="https://github.com"
+              href="https://github.com/Soumyadip1004/keylogger-dashboard"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border px-6 font-medium text-sm transition-colors hover:bg-muted"
