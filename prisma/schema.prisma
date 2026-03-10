@@ -1,0 +1,20 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Log {
+  id        String   @id @default(cuid())
+  device    String
+  data      String
+  ip        String
+  timestamp DateTime @default(now())
+
+  @@index([device])
+  @@index([timestamp])
+  @@map("logs")
+}
