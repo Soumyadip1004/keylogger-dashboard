@@ -1,11 +1,27 @@
 "use client";
 
-import { Activity, Clock, Keyboard, Monitor, RefreshCw } from "lucide-react";
+import {
+  ChevronRight,
+  Clock,
+  Keyboard,
+  Monitor,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { ApiKeyGate } from "@/components/api-key-gate";
 import { Button } from "@/components/ui/button";
-import type { LogEntry } from "./columns";
-import { columns } from "./columns";
-import { DataTable } from "./data-table";
+import { formatTimestamp, timeAgo } from "@/lib/format";
+import { useApiKey } from "@/lib/hooks/use-api-key";
+
+interface DeviceDetail {
+  device: string;
+  logCount: number;
+  latestIp: string | null;
+  latestLog: string | null;
+  oldestLog: string | null;
+}
 
 interface Stats {
   totalLogs: number;
@@ -16,7 +32,9 @@ interface Stats {
 }
 
 export default function DashboardPage() {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const { isReady, login, logout, authHeaders } = useApiKey();
+
+  const [devices, setDevices] = useState<DeviceDetail[]>([]);
   const [stats, setStats] = useState<Stats>({
     totalLogs: 0,
     totalDevices: 0,
@@ -26,50 +44,36 @@ export default function DashboardPage() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [apiKey, setApiKey] = useState<string>("");
-  const [apiKeySet, setApiKeySet] = useState(false);
 
-  // Load API key from localStorage on mount
-  useEffect(() => {
-    const stored = localStorage.getItem("apiKey");
-    if (stored) {
-      setApiKey(stored);
-      setApiKeySet(true);
-    }
-  }, []);
-
-  const fetchData = useCallback(async () => {
-    if (!apiKey) return;
+  // Fetch devices overview
+  const fetchDevices = useCallback(async () => {
+    if (!authHeaders) return;
 
     setLoading(true);
     setError(null);
 
     try {
-      const [logsRes, statsRes] = await Promise.all([
-        fetch("/api/logs?limit=500", {
-          headers: { "x-api-key": apiKey },
-        }),
-        fetch("/api/stats", {
-          headers: { "x-api-key": apiKey },
-        }),
+      const [devicesRes, statsRes] = await Promise.all([
+        fetch("/api/devices/details", { headers: authHeaders }),
+        fetch("/api/stats", { headers: authHeaders }),
       ]);
 
-      if (logsRes.status === 401 || statsRes.status === 401) {
+      if (devicesRes.status === 401 || statsRes.status === 401) {
         setError("Invalid API key. Please check and try again.");
         setLoading(false);
         return;
       }
 
-      if (!logsRes.ok || !statsRes.ok) {
+      if (!devicesRes.ok || !statsRes.ok) {
         setError("Failed to fetch data from the server.");
         setLoading(false);
         return;
       }
 
-      const logsData = await logsRes.json();
+      const devicesData = await devicesRes.json();
       const statsData = await statsRes.json();
 
-      setLogs(logsData.logs ?? []);
+      setDevices(devicesData.devices ?? []);
       setStats(
         statsData.stats ?? {
           totalLogs: 0,
@@ -80,81 +84,63 @@ export default function DashboardPage() {
         },
       );
     } catch (err) {
-      console.error("Failed to fetch dashboard data:", err);
+      console.error("Failed to fetch devices:", err);
       setError("Network error. Could not reach the server.");
     } finally {
       setLoading(false);
     }
-  }, [apiKey]);
+  }, [authHeaders]);
 
-  // Fetch data when API key is available
+  // Fetch devices when API key is available
   useEffect(() => {
-    if (apiKeySet && apiKey) {
-      fetchData();
+    if (isReady) {
+      fetchDevices();
     }
-  }, [apiKeySet, apiKey, fetchData]);
+  }, [isReady, fetchDevices]);
 
   // Auto-refresh every 15 seconds
   useEffect(() => {
-    if (!apiKeySet || !apiKey) return;
+    if (!isReady) return;
 
-    const interval = setInterval(fetchData, 15000);
+    const interval = setInterval(fetchDevices, 15000);
     return () => clearInterval(interval);
-  }, [apiKeySet, apiKey, fetchData]);
+  }, [isReady, fetchDevices]);
 
-  // API key input screen
-  if (!apiKeySet) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="mx-auto w-full max-w-md rounded-xl border bg-card p-8 shadow-sm">
-          <div className="mb-6 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-              <Keyboard className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h1 className="font-bold text-foreground text-lg">
-                Keylogger Dashboard
-              </h1>
-              <p className="text-muted-foreground text-xs">
-                Enter your API key to access the dashboard.
-              </p>
-            </div>
-          </div>
-          <form
-            onSubmit={e => {
-              e.preventDefault();
-              if (apiKey.trim()) {
-                localStorage.setItem("apiKey", apiKey.trim());
-                setApiKeySet(true);
-              }
-            }}
-            className="space-y-4"
-          >
-            <div>
-              <label
-                htmlFor="api-key"
-                className="mb-1.5 block font-medium text-foreground text-sm"
-              >
-                API Key
-              </label>
-              <input
-                id="api-key"
-                type="password"
-                value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
-                placeholder="Enter your API key..."
-                className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-              />
-            </div>
-            <Button type="submit" className="w-full">
-              Access Dashboard
-            </Button>
-          </form>
-        </div>
-      </div>
-    );
+  // Handle clearing logs for a device
+  const handleClearDeviceLogs = async (device: string) => {
+    if (!authHeaders) return;
+
+    if (
+      !confirm(
+        `Are you sure you want to delete ALL logs for "${device}"? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `/api/logs?device=${encodeURIComponent(device)}`,
+        {
+          method: "DELETE",
+          headers: authHeaders,
+        },
+      );
+
+      if (res.ok) {
+        fetchDevices();
+      }
+    } catch (err) {
+      console.error("Failed to clear device logs:", err);
+    }
+  };
+
+  // ── API key gate ──────────────────────────────────────────
+  if (!isReady) {
+    return <ApiKeyGate onSubmit={login} />;
   }
 
+  // ── Devices Overview ──────────────────────────────────────
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -165,14 +151,14 @@ export default function DashboardPage() {
               Keylogger Dashboard
             </h1>
             <p className="mt-1 text-muted-foreground text-sm">
-              Monitor and view captured keystrokes from connected devices.
+              Select a device to view its captured keystrokes.
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
-              onClick={fetchData}
+              onClick={fetchDevices}
               disabled={loading}
             >
               <RefreshCw
@@ -184,10 +170,8 @@ export default function DashboardPage() {
               variant="ghost"
               size="sm"
               onClick={() => {
-                localStorage.removeItem("apiKey");
-                setApiKey("");
-                setApiKeySet(false);
-                setLogs([]);
+                logout();
+                setDevices([]);
                 setStats({
                   totalLogs: 0,
                   totalDevices: 0,
@@ -209,8 +193,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Stats Cards */}
-        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Global Stats */}
+        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="rounded-lg border bg-card p-4 shadow-sm">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
@@ -234,7 +218,7 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="font-medium text-muted-foreground text-sm">
-                  Active Devices
+                  Connected Devices
                 </p>
                 <p className="font-bold text-2xl text-foreground">
                   {stats.totalDevices}
@@ -250,48 +234,24 @@ export default function DashboardPage() {
               </div>
               <div>
                 <p className="font-medium text-muted-foreground text-sm">
-                  Latest Log
+                  Latest Activity
                 </p>
                 <p className="font-semibold text-foreground text-sm">
                   {stats.newestLog
-                    ? new Intl.DateTimeFormat("en-US", {
-                        month: "short",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        hour12: true,
-                      }).format(new Date(stats.newestLog))
+                    ? formatTimestamp(stats.newestLog)
                     : "No logs yet"}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-lg border bg-card p-4 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                <Activity className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="font-medium text-muted-foreground text-sm">
-                  Devices
-                </p>
-                <p className="max-w-40 truncate font-semibold text-foreground text-sm">
-                  {stats.devices.length > 0 ? stats.devices.join(", ") : "None"}
                 </p>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Data Table */}
-        <div className="rounded-lg border bg-card p-4 shadow-sm">
-          <div className="mb-4">
-            <h2 className="font-semibold text-foreground text-lg">
-              Captured Logs
-            </h2>
+        {/* Devices Grid */}
+        <div className="rounded-lg border bg-card p-6 shadow-sm">
+          <div className="mb-6">
+            <h2 className="font-semibold text-foreground text-lg">Devices</h2>
             <p className="text-muted-foreground text-sm">
-              All keystroke logs received from connected devices.
+              All devices that have sent keystroke data.
               {!loading && (
                 <span className="ml-1 text-muted-foreground/60">
                   Auto-refreshes every 15s.
@@ -299,13 +259,115 @@ export default function DashboardPage() {
               )}
             </p>
           </div>
-          {loading && logs.length === 0 ? (
+
+          {loading && devices.length === 0 ? (
             <div className="flex h-40 items-center justify-center text-muted-foreground text-sm">
               <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-              Loading logs...
+              Loading devices...
+            </div>
+          ) : devices.length === 0 ? (
+            <div className="flex h-40 flex-col items-center justify-center gap-2 text-muted-foreground">
+              <Monitor className="h-10 w-10 text-muted-foreground/40" />
+              <p className="text-sm">No devices connected yet.</p>
+              <p className="text-xs">
+                Deploy the keylogger client to start capturing data.
+              </p>
             </div>
           ) : (
-            <DataTable columns={columns} data={logs} />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {devices.map(device => (
+                <div key={device.device} className="group relative">
+                  <Link
+                    href={`/dashboard/${encodeURIComponent(device.device)}`}
+                    className="block rounded-xl border bg-background p-5 shadow-sm transition-all hover:border-primary/40 hover:shadow-md"
+                  >
+                    {/* Card Header */}
+                    <div className="mb-4 flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 transition-colors group-hover:bg-primary/20">
+                          <Monitor className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-semibold text-foreground leading-tight">
+                              {device.device}
+                            </h3>
+                            {/* Delete button (top right, visible on hover) */}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleClearDeviceLogs(device.device)
+                              }
+                              className="rounded-md p-1.5 text-muted-foreground opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                              title={`Clear all logs for ${device.device}`}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          {device.latestIp && (
+                            <p className="mt-0.5 font-mono text-muted-foreground text-xs">
+                              {device.latestIp}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <ChevronRight className="h-5 w-5 text-muted-foreground/40 transition-all group-hover:translate-x-0.5 group-hover:text-primary" />
+                    </div>
+
+                    {/* Card Stats */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-lg bg-muted/50 px-3 py-2">
+                        <p className="text-[0.65rem] text-muted-foreground uppercase tracking-wider">
+                          Log Entries
+                        </p>
+                        <p className="font-bold text-foreground text-lg">
+                          {device.logCount.toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="rounded-lg bg-muted/50 px-3 py-2">
+                        <p className="text-[0.65rem] text-muted-foreground uppercase tracking-wider">
+                          Last Active
+                        </p>
+                        <p className="font-semibold text-foreground text-sm">
+                          {device.latestLog
+                            ? timeAgo(device.latestLog)
+                            : "Never"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Activity indicator */}
+                    {device.latestLog && (
+                      <div className="mt-3 flex items-center gap-1.5">
+                        <span
+                          className={`inline-block h-2 w-2 rounded-full ${
+                            Date.now() - new Date(device.latestLog).getTime() <
+                            5 * 60 * 1000
+                              ? "animate-pulse bg-green-500"
+                              : Date.now() -
+                                    new Date(device.latestLog).getTime() <
+                                  60 * 60 * 1000
+                                ? "bg-yellow-500"
+                                : "bg-muted-foreground/40"
+                          }`}
+                        />
+                        <span className="text-muted-foreground text-xs">
+                          {Date.now() - new Date(device.latestLog).getTime() <
+                          5 * 60 * 1000
+                            ? "Active now"
+                            : Date.now() -
+                                  new Date(device.latestLog).getTime() <
+                                60 * 60 * 1000
+                              ? "Recently active"
+                              : "Inactive"}
+                        </span>
+                      </div>
+                    )}
+                  </Link>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>

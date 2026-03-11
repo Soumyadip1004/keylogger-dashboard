@@ -1,9 +1,16 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, Copy, Eye, MoreHorizontal, Trash2 } from "lucide-react";
+import {
+  ArrowUpDown,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  MoreHorizontal,
+  Trash2,
+} from "lucide-react";
+import { useState } from "react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -35,62 +42,49 @@ function formatTimestamp(isoString: string): string {
   }).format(date);
 }
 
-function truncateData(data: string, maxLength = 80): string {
-  if (data.length <= maxLength) return data;
-  return `${data.slice(0, maxLength)}...`;
-}
+const TRUNCATE_LENGTH = 100;
 
-const deviceColors: Record<string, "default" | "secondary" | "outline"> = {};
-const colorOptions: Array<"default" | "secondary" | "outline"> = [
-  "default",
-  "secondary",
-  "outline",
-];
-let colorIndex = 0;
+function ExpandableKeystrokeCell({ data }: { data: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const needsTruncation = data.length > TRUNCATE_LENGTH;
 
-function getDeviceColor(device: string): "default" | "secondary" | "outline" {
-  if (!deviceColors[device]) {
-    deviceColors[device] = colorOptions[colorIndex % colorOptions.length];
-    colorIndex++;
+  if (!needsTruncation) {
+    return (
+      <div className="font-mono text-xs">
+        <span className="whitespace-pre-wrap break-all">{data}</span>
+      </div>
+    );
   }
-  return deviceColors[device];
+
+  return (
+    <div className="max-w-md font-mono text-xs">
+      <button
+        type="button"
+        onClick={() => setExpanded(prev => !prev)}
+        className="group/expand flex w-full cursor-pointer items-start gap-1.5 text-left"
+      >
+        <span className="mt-0.5 shrink-0 text-muted-foreground transition-colors group-hover/expand:text-foreground">
+          {expanded ? (
+            <ChevronDown className="h-3 w-3" />
+          ) : (
+            <ChevronRight className="h-3 w-3" />
+          )}
+        </span>
+        <span className="whitespace-pre-wrap break-all">
+          {expanded ? data : `${data.slice(0, TRUNCATE_LENGTH)}...`}
+        </span>
+      </button>
+    </div>
+  );
 }
 
 export const columns: ColumnDef<LogEntry>[] = [
-  {
-    accessorKey: "device",
-    header: ({ column }) => {
-      return (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Device
-          <ArrowUpDown className="ml-2 h-4 w-4" />
-        </Button>
-      );
-    },
-    cell: ({ row }) => {
-      const device = row.getValue("device") as string;
-      return (
-        <Badge variant={getDeviceColor(device)} className="font-mono">
-          {device}
-        </Badge>
-      );
-    },
-  },
   {
     accessorKey: "data",
     header: "Keystrokes",
     cell: ({ row }) => {
       const data = row.getValue("data") as string;
-      return (
-        <div className="max-w-[400px] font-mono text-xs">
-          <span className="whitespace-pre-wrap break-all">
-            {truncateData(data)}
-          </span>
-        </div>
-      );
+      return <ExpandableKeystrokeCell data={data} />;
     },
   },
   {
@@ -162,18 +156,6 @@ export const columns: ColumnDef<LogEntry>[] = [
             >
               <Copy className="mr-2 h-4 w-4" />
               Copy log ID
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => {
-                const el = document.getElementById(`log-detail-${log.id}`);
-                if (el) {
-                  el.classList.toggle("hidden");
-                }
-              }}
-            >
-              <Eye className="mr-2 h-4 w-4" />
-              View full data
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem

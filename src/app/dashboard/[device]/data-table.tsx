@@ -17,19 +17,10 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  Settings2,
 } from "lucide-react";
 import * as React from "react";
 
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   Table,
@@ -101,47 +92,6 @@ export function DataTable<TData, TValue>({
           }
           className="max-w-sm"
         />
-        <Input
-          placeholder="Filter by device..."
-          value={(table.getColumn("device")?.getFilterValue() as string) ?? ""}
-          onChange={event =>
-            table.getColumn("device")?.setFilterValue(event.target.value)
-          }
-          className="max-w-[200px]"
-        />
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button variant="outline" size="sm" className="ml-auto h-8" />
-            }
-          >
-            <Settings2 className="mr-2 h-4 w-4" />
-            View
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-[180px]">
-            <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {table
-              .getAllColumns()
-              .filter(
-                column =>
-                  typeof column.accessorFn !== "undefined" &&
-                  column.getCanHide(),
-              )
-              .map(column => {
-                return (
-                  <DropdownMenuCheckboxItem
-                    key={column.id}
-                    className="capitalize"
-                    checked={column.getIsVisible()}
-                    onCheckedChange={value => column.toggleVisibility(!!value)}
-                  >
-                    {column.id}
-                  </DropdownMenuCheckboxItem>
-                );
-              })}
-          </DropdownMenuContent>
-        </DropdownMenu>
       </div>
 
       {/* Table */}

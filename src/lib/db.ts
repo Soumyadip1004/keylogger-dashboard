@@ -150,6 +150,55 @@ export async function getDevices(): Promise<string[]> {
 }
 
 /**
+ * Per-device summary returned by getDeviceDetails().
+ */
+export interface DeviceDetail {
+  device: string;
+  logCount: number;
+  latestIp: string | null;
+  latestLog: string | null;
+  oldestLog: string | null;
+}
+
+/**
+ * Get enriched details for every unique device:
+ * log count, latest IP, newest and oldest log timestamps.
+ */
+export async function getDeviceDetails(): Promise<DeviceDetail[]> {
+  const devices = await getDevices();
+
+  const details = await Promise.all(
+    devices.map(async device => {
+      const [logCount, newest, oldest] = await Promise.all([
+        prisma.log.count({
+          where: { device: { equals: device, mode: "insensitive" } },
+        }),
+        prisma.log.findFirst({
+          where: { device: { equals: device, mode: "insensitive" } },
+          orderBy: { timestamp: "desc" },
+          select: { ip: true, timestamp: true },
+        }),
+        prisma.log.findFirst({
+          where: { device: { equals: device, mode: "insensitive" } },
+          orderBy: { timestamp: "asc" },
+          select: { timestamp: true },
+        }),
+      ]);
+
+      return {
+        device,
+        logCount,
+        latestIp: newest?.ip ?? null,
+        latestLog: newest ? newest.timestamp.toISOString() : null,
+        oldestLog: oldest ? oldest.timestamp.toISOString() : null,
+      };
+    }),
+  );
+
+  return details;
+}
+
+/**
  * Get summary statistics about the logs.
  */
 export async function getStats(): Promise<{
