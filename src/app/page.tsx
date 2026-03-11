@@ -251,7 +251,7 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-2 text-muted-foreground text-xs">
             <Keyboard className="h-3.5 w-3.5" />
-            Keylogger Dashboard — ICSS Internship Project
+            Keylogger Dashboard — Internship Project
           </div>
           <p className="text-muted-foreground text-xs">
             Educational Purpose Only
