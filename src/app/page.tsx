@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const metadata: Metadata = {
   title: "Keylogger Dashboard — Remote Keystroke Monitoring",
@@ -27,13 +28,16 @@ export default function HomePage() {
               Keylogger Dashboard
             </span>
           </div>
-          <Link
-            href="/dashboard"
-            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 font-medium text-primary-foreground text-sm transition-colors hover:bg-primary/90"
-          >
-            Open Dashboard
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
+          <div className="flex items-center gap-4">
+            <ThemeToggle />
+            <Link
+              href="/dashboard"
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 font-medium text-primary-foreground text-sm transition-colors hover:bg-primary/90"
+            >
+              Open Dashboard
+              <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
         </div>
       </header>
 

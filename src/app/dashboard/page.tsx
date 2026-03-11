@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ApiKeyGate } from "@/components/api-key-gate";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { formatTimestamp, timeAgo } from "@/lib/format";
 import { useApiKey } from "@/lib/hooks/use-api-key";
@@ -155,6 +156,7 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <Button
               variant="outline"
               size="sm"
